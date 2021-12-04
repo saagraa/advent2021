@@ -1,5 +1,4 @@
 use "files"
-use "promises"
 
 primitive O2
 primitive CO2
@@ -91,14 +90,12 @@ class Tree
 
 actor TreeBuilder
   var tree : Tree ref
-  let promise : Promise[None]
   let mask : I32
   let output : OutStream
   
-  new create(output' : OutStream, mask' : I32, promise' : Promise[None]) =>
+  new create(output' : OutStream, mask' : I32) =>
     mask = mask'
     tree = Tree(mask)
-    promise = promise'
     output = output'
 
   be doStuff() =>
@@ -121,19 +118,16 @@ actor TreeBuilder
         tree.add(v)
       end
     | None =>
-       let self = recover tag this end
-       promise.next[None]({ (x : None) => self.doStuff()})
+       doStuff()
     end
 
 actor KeyBuilder
   let bits : Array[I32]
   let output : OutStream
-  let promise : Promise[None]
  
-  new create(output' : OutStream, promise' : Promise[None]) =>
+  new create(output' : OutStream) =>
     output = output'
     bits = Array[I32].init(0,12)
-    promise = promise'
 
   fun bitsToGamma() : I32 =>
     var r : I32 = 0
@@ -165,7 +159,6 @@ actor KeyBuilder
         end
       end
     | None =>
-      promise(None) 
       let gamma = bitsToGamma()
       let epsilon = gammaToEpsilon(gamma)
       let power : I32 = gamma * epsilon
@@ -205,27 +198,13 @@ actor Lines
       end
     end
 
-actor Writer
-  let output : OutStream
- 
-  new create(output' : OutStream) =>
-    output = output'
-
-  be eatLine(line : (String | None)) =>
-    match line
-    | let line' : String =>
-      output.print(line')
-    end
-
 actor Main
   new create(env: Env) =>
     try 
       let auth = FileAuth.create(env.root as AmbientAuth)
       let lines = Lines(auth, "input.txt")
-      let writer = Writer(env.out)
-      let key = Promise[None]
-      let keyBuilder = KeyBuilder(env.out, key)
-      let treeBuilder = TreeBuilder(env.out, 0b100000000000, key)
+      let keyBuilder = KeyBuilder(env.out)
+      let treeBuilder = TreeBuilder(env.out, 0b100000000000)
       let targets : Array[EatLine tag] val = [ keyBuilder; treeBuilder ]
       lines.run(targets)
     end

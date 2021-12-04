@@ -12,59 +12,51 @@ interface EatLine
 class Tree
   var zero : (Tree ref | I32 | None)
   var one : (Tree ref | I32 | None)
+  var count_zero : I32
+  var count_one : I32
   let mask : I32
 
   new create(mask' : I32) =>
     zero = None
     one = None
     mask = mask'
+    count_zero = 0
+    count_one = 0
 
-  fun ref find(key : Array[I32] val, life: Life, index: USize) : (I32 | None) =>
-    try 
-      let v = key(index)?
+  fun ref getOne(life : Life) : (I32 | None) => 
+    match one 
+      | let t : Tree ref => t.get(life)
+      | let i : I32 => i
+      | None => None
+    end
+
+  fun ref getZero(life : Life) : (I32 | None) => 
+    match zero 
+      | let t : Tree ref => t.get(life)
+      | let i : I32 => i
+      | None => None
+    end
+
+  fun ref get(life : Life) : (I32 | None) => 
     match life 
-    | O2 =>
-      if (v >= 0) then
-        match one
-        | let t : Tree =>
-           t.find(key, life, index + 1)
-        | let i : I32 => 
-           i
-        | None => None
-        end
-      else
-        match zero
-        | let t : Tree =>
-           t.find(key, life, index + 1)
-        | let i : I32 => 
-           i
-        | None => None
-        end
-      end    
-    | CO2 =>
-      if (v >= 0) then
-        match zero
-        | let t : Tree =>
-           t.find(key, life, index + 1)
-        | let i : I32 => 
-           i
-        | None => None
-        end
-      else
-        match one
-        | let t : Tree =>
-           t.find(key, life, index + 1)
-        | let i : I32 => 
-           i
-        | None => None
-        end
-       end
-     end
-   end
+      | O2 => 
+         if count_one >= count_zero then
+           this.getOne(life)
+         else 
+           this.getZero(life)
+         end
+      | CO2 => 
+         if count_one >= count_zero then
+           this.getZero(life)
+         else
+           this.getOne(life)
+         end
+    end
 
   fun ref add(v : I32) =>
     let x = v and mask 
     if x == 0 then
+      count_zero = count_zero + 1
       match zero 
       | let t : Tree ref => 
         t.add(v)
@@ -80,6 +72,7 @@ class Tree
         zero = v
       end
     else
+      count_one = count_one + 1
       match one
       | let t : Tree ref =>
         t.add(v)
@@ -98,21 +91,21 @@ class Tree
 
 actor TreeBuilder
   var tree : Tree ref
-  let promise : Promise[Array[I32] val]
+  let promise : Promise[None]
   let mask : I32
   let output : OutStream
   
-  new create(output' : OutStream, mask' : I32, promise' : Promise[Array[I32] val]) =>
+  new create(output' : OutStream, mask' : I32, promise' : Promise[None]) =>
     mask = mask'
     tree = Tree(mask)
     promise = promise'
     output = output'
 
-  be doStuff(x : Array[I32] val) =>
-    let a = tree.find(x, O2, 0)
+  be doStuff() =>
+    let a = tree.get(O2)
     match a
     | let a' : I32 => 
-      let b = tree.find(x, CO2, 0)
+      let b = tree.get(CO2)
       match b
       | let b' : I32 =>
         output.print("Life support:")
@@ -129,15 +122,15 @@ actor TreeBuilder
       end
     | None =>
        let self = recover tag this end
-       promise.next[None]({ (x : Array[I32] val) => self.doStuff(x)})
+       promise.next[None]({ (x : None) => self.doStuff()})
     end
 
 actor KeyBuilder
   let bits : Array[I32]
   let output : OutStream
-  let promise : Promise[Array[I32] val]
+  let promise : Promise[None]
  
-  new create(output' : OutStream, promise' : Promise[Array[I32] val]) =>
+  new create(output' : OutStream, promise' : Promise[None]) =>
     output = output'
     bits = Array[I32].init(0,12)
     promise = promise'
@@ -172,11 +165,7 @@ actor KeyBuilder
         end
       end
     | None =>
-      let copy : Array[I32] iso = recover Array[I32] end
-      for v in bits.values() do
-        copy.push(v)
-      end
-      promise(consume copy) 
+      promise(None) 
       let gamma = bitsToGamma()
       let epsilon = gammaToEpsilon(gamma)
       let power : I32 = gamma * epsilon
@@ -234,7 +223,7 @@ actor Main
       let auth = FileAuth.create(env.root as AmbientAuth)
       let lines = Lines(auth, "input.txt")
       let writer = Writer(env.out)
-      let key = Promise[Array[I32] val]
+      let key = Promise[None]
       let keyBuilder = KeyBuilder(env.out, key)
       let treeBuilder = TreeBuilder(env.out, 0b100000000000, key)
       let targets : Array[EatLine tag] val = [ keyBuilder; treeBuilder ]
